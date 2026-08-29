@@ -1,8 +1,8 @@
+import { AppError } from "../errors/AppError";
+import { Usage, UsageWithDetails } from "../models/usage.model";
+import { DriverRepository } from "../repositories/driver.repository";
 import { UsageRepository } from "../repositories/usage.repository";
 import { VehicleRepository } from "../repositories/vehicle.repository";
-import { DriverRepository } from "../repositories/driver.repository";
-import { Usage, UsageWithDetails } from "../models/usage.model";
-import { AppError } from "../errors/AppError";
 
 export class UsageService {
   constructor(
@@ -12,6 +12,23 @@ export class UsageService {
   ) {}
 
   create(data: { vehicleId: string; driverId: string; reason: string }): Usage {
+    const vehicle = this.vehicleRepository.findById(data.vehicleId);
+    if (!vehicle) throw new AppError("Vehicle not found", 404);
+
+    const driver = this.driverRepository.findById(data.driverId);
+    if (!driver) throw new AppError("Driver not found", 404);
+
+    const vehicleInUse = this.usageRepository.findActiveByVehicleId(
+      data.vehicleId,
+    );
+    if (vehicleInUse) throw new AppError("Vehicle is already in use", 409);
+
+    const driverInUse = this.usageRepository.findActiveByDriverId(
+      data.driverId,
+    );
+    if (driverInUse)
+      throw new AppError("Driver is already using a vehicle", 409);
+
     return this.usageRepository.create({
       ...data,
       startDate: new Date(),
@@ -21,13 +38,15 @@ export class UsageService {
   finish(id: string): Usage {
     const usage = this.usageRepository.findById(id);
     if (!usage) throw new AppError("Usage not found", 404);
-    const finished = this.usageRepository.finish(id);
-    return finished!;
+
+    if (usage.endDate !== null)
+      throw new AppError("Usage already finished", 409);
+
+    return this.usageRepository.finish(id)!;
   }
 
   findAll(): UsageWithDetails[] {
-    const usages = this.usageRepository.findAll();
-    return usages.map((usage) => {
+    return this.usageRepository.findAll().map((usage) => {
       const vehicle = this.vehicleRepository.findById(usage.vehicleId)!;
       const driver = this.driverRepository.findById(usage.driverId)!;
       return {
